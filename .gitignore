@@ -1,0 +1,4 @@
+# Personal data — notes, recordings and images live here at runtime
+dossier-server/storage/
+node_modules/
+*.bak

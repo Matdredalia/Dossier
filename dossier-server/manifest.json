@@ -1,0 +1,6 @@
+{
+  "id": "dossier-server",
+  "name": "Dossier Storage Server",
+  "description": "Backend storage for the Dossier extension — persists notes, links, images, and audio to disk so they sync across every device pointed at this SillyTavern server.",
+  "version": "1.0.0"
+}

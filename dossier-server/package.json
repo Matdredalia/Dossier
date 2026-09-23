@@ -1,0 +1,6 @@
+{
+  "name": "dossier-server",
+  "version": "1.0.0",
+  "description": "Backend storage plugin for the Dossier SillyTavern extension",
+  "main": "index.js"
+}

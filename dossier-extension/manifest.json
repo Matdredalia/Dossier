@@ -1,0 +1,12 @@
+{
+  "display_name": "Dossier",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "Matdredalia",
+  "version": "1.0.0",
+  "homePage": "https://github.com/Matdredalia/Dossier",
+  "auto_update": false
+}
