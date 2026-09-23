@@ -57,3 +57,7 @@ Back up or move your dossiers by copying `dossier-server/storage/`. It is git-ig
 ## Notes for developers
 
 SillyTavern mounts a global `multer(...).single('avatar')` on every request before plugin routers run, and it rejects any other multipart field name with `Unexpected field`. That's why the extension uploads files under the field name `avatar` and the plugin reads the already-saved `req.file` instead of running its own multer.
+
+## License
+
+[WTFPL](LICENSE) — do what the fuck you want to. Made as a thank-you to the SillyTavern community.
