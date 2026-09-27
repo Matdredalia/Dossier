@@ -2,3 +2,6 @@
 dossier-server/storage/
 node_modules/
 *.bak
+
+# Dev-only test harness and screenshots (not needed to run the extension)
+dev/

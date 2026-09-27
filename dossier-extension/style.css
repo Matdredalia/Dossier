@@ -8,18 +8,23 @@
     z-index: 9999;
     display: none;
     font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", "Consolas", "Monaco", "Andale Mono", monospace;
-    font-size: 13px;
+    font-size: calc(13px * var(--ds, 1));
     line-height: 1.5;
     color: #c1c2c5;
 }
 #dossier-panel-root.dossier-visible {
     display: block;
 }
+/* Dark native scrollbars and form controls (Firefox otherwise draws bright white ones). */
+#dossier-panel-root { color-scheme: dark; }
+#dossier-panel-root * { scrollbar-width: thin; scrollbar-color: #4a4d55 transparent; }
 
 #dossier-panel-root .dossier-panel {
-    width: 360px;
-    max-width: calc(100vw - 32px);
-    max-height: 80vh;
+    position: relative;
+    width: var(--dossier-w, 540px);
+    height: var(--dossier-h, 72vh);
+    max-width: calc(100vw - 16px);
+    max-height: calc(100vh - 16px);
     background: #1a1b1e;
     border: 1px solid #373a40;
     border-radius: 14px;
@@ -27,10 +32,44 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    container-type: inline-size;   /* lets the layout react to the PANEL's width, not the window's */
+    container-name: dossier;
 }
 
+/* Large view: nearly the whole window (inline drag/resize styles are overridden on purpose). */
+#dossier-panel-root.dossier-large {
+    top: 3vh !important;
+    left: 3vw !important;
+    right: auto !important;
+    bottom: auto !important;
+}
+#dossier-panel-root.dossier-large .dossier-panel {
+    width: 94vw;
+    height: 94vh;
+    max-width: none;
+    max-height: none;
+}
+#dossier-panel-root.dossier-large .dossier-resize-grip { display: none; }
+
+/* Corner grip: drag to resize (mouse and touch). */
+.dossier-resize-grip {
+    position: absolute;
+    right: 3px;
+    bottom: 3px;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    touch-action: none;
+    opacity: 0.7;
+    z-index: 2;
+    background: linear-gradient(135deg, transparent 0 52%, #909296 52% 58%, transparent 58% 70%, #909296 70% 76%, transparent 76%);
+}
+.dossier-resize-grip:hover { opacity: 1; }
+
 /* ── top bar (also the drag handle) ── */
+.dossier-topbar-actions { display: flex; align-items: center; gap: 2px; }
 .dossier-topbar {
+    touch-action: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -50,7 +89,7 @@
 }
 
 .dossier-title {
-    font-size: 15px;
+    font-size: calc(15px * var(--ds, 1));
     font-weight: 600;
     color: #e4e4e7;
     letter-spacing: -0.01em;
@@ -99,7 +138,7 @@
     background: transparent;
     color: #909296;
     font-family: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, color 0.15s;
     flex-shrink: 0;
@@ -129,7 +168,7 @@
 .dossier-switcher.open { display: block; }
 .dossier-switcher-item {
     padding: 8px 12px;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     color: #c1c2c5;
     cursor: pointer;
     border-bottom: 1px solid #25262b;
@@ -154,7 +193,7 @@
     border-bottom: 2px solid transparent;
     color: #909296;
     font-family: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     font-weight: 500;
     text-align: center;
     cursor: pointer;
@@ -171,10 +210,10 @@
     background: #1a1b1e;
     overflow-y: auto;
 }
-.tab-panel.active { display: block; }
+.tab-panel.active { display: block; flex: 1 1 auto; min-height: 0; }
 
 .panel-label {
-    font-size: 10px;
+    font-size: calc(10px * var(--ds, 1));
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: #5c7cfa;
@@ -193,7 +232,7 @@
     background: #5c7cfa;
     color: #fff;
     font-family: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
@@ -213,7 +252,7 @@
     background: transparent;
     color: #c1c2c5;
     font-family: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     font-weight: 500;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
@@ -264,14 +303,14 @@
 .sound-play:hover { background: #373a40; color: #5c7cfa; }
 .sound-title {
     flex: 1;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     color: #c1c2c5;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 .sound-duration {
-    font-size: 11px;
+    font-size: calc(11px * var(--ds, 1));
     color: #909296;
     flex-shrink: 0;
     font-variant-numeric: tabular-nums;
@@ -286,14 +325,14 @@
     justify-content: center;
     gap: 8px;
     color: #909296;
-    font-size: 11px;
+    font-size: calc(11px * var(--ds, 1));
     cursor: pointer;
     transition: border-color 0.15s, background 0.15s;
 }
 .sound-upload-area:hover { border-color: #5c7cfa; background: #25262b; color: #c1c2c5; }
 
 /* ── visual grid ── */
-.visual-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 10px; }
+.visual-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(calc(130px * var(--ds, 1)), 1fr)); gap: 8px; margin-top: 10px; }
 .vis-thumb {
     position: relative;
     aspect-ratio: 1 / 1;
@@ -309,8 +348,9 @@
 }
 .vis-thumb:hover { border-color: #5c7cfa; transform: scale(1.02); }
 .vis-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.visual-grid.fit .vis-thumb img { object-fit: contain; }
 .vis-thumb .thumb-label {
-    font-size: 9px;
+    font-size: calc(9px * var(--ds, 1));
     color: #909296;
     text-align: center;
     opacity: 0.7;
@@ -342,15 +382,34 @@
 .dossier-lightbox {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.85);
+    background: rgba(0,0,0,0.9);
     display: none;
     align-items: center;
     justify-content: center;
     z-index: 10001;
-    padding: 24px;
+    padding: 12px;
+    touch-action: pan-y;
 }
 .dossier-lightbox.open { display: flex; }
-.dossier-lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
+.lb-figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 100%; max-height: 100%; }
+.dossier-lightbox img { max-width: 96vw; max-height: calc(100vh - 90px); object-fit: contain; border-radius: 8px; }
+.lb-caption { color: #c1c2c5; font-size: calc(12px * var(--ds, 1)); text-align: center; max-width: 80vw; }
+.lb-btn {
+    position: absolute;
+    border: none;
+    background: rgba(37, 38, 43, 0.85);
+    color: #e4e4e7;
+    cursor: pointer;
+    border-radius: 8px;
+    font-size: 26px;
+    line-height: 1;
+    z-index: 2;
+}
+.lb-btn:hover { background: #5c7cfa; }
+.lb-close { top: 14px; right: 14px; width: 40px; height: 40px; font-size: 18px; }
+.lb-nav { top: 50%; transform: translateY(-50%); width: 46px; height: 72px; }
+.lb-prev { left: 12px; }
+.lb-next { right: 12px; }
 
 /* ── text sub-tabs ── */
 .subtab-bar {
@@ -370,7 +429,7 @@
     background: transparent;
     color: #909296;
     font-family: inherit;
-    font-size: 10px;
+    font-size: calc(10px * var(--ds, 1));
     font-weight: 500;
     cursor: pointer;
     text-align: center;
@@ -393,17 +452,20 @@
 }
 .note-entry:hover { border-color: #5c7cfa44; }
 .note-body { flex: 1; min-width: 0; }
-.note-title { font-size: 12px; font-weight: 500; color: #e4e4e7; }
+.note-title { font-size: calc(12px * var(--ds, 1)); font-weight: 500; color: #e4e4e7; }
 .note-snippet {
-    font-size: 11px;
+    font-size: calc(11px * var(--ds, 1));
     color: #909296;
-    white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
     margin-top: 1px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    line-height: 1.45;
 }
-.note-meta { font-size: 10px; color: #5c7cfa88; margin-top: 2px; }
-.note-empty { text-align: center; padding: 20px 0; color: #909296; font-size: 11px; }
+.note-entry.selected { border-color: #5c7cfa; background: #2b2d36; }
+.note-meta { font-size: calc(10px * var(--ds, 1)); color: #5c7cfa88; margin-top: 2px; }
+.note-empty { text-align: center; padding: 20px 0; color: #909296; font-size: calc(11px * var(--ds, 1)); }
 
 /* ── note editor ── */
 .note-editor {
@@ -423,13 +485,15 @@
     border-radius: 6px;
     color: #c1c2c5;
     font-family: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     padding: 7px 10px;
     outline: none;
     resize: vertical;
 }
 .note-editor input:focus, .note-editor textarea:focus { border-color: #5c7cfa; }
-.note-editor textarea { min-height: 90px; }
+.note-editor textarea { min-height: 220px; line-height: 1.55; }
+.note-editor input { font-size: calc(13px * var(--ds, 1)); }
+.note-editor textarea { font-size: calc(13px * var(--ds, 1)); }
 .note-editor-actions { display: flex; gap: 6px; justify-content: flex-end; }
 
 /* ── links tab ── */
@@ -442,7 +506,7 @@
     border-radius: 6px;
     color: #c1c2c5;
     font-family: inherit;
-    font-size: 12px;
+    font-size: calc(12px * var(--ds, 1));
     outline: none;
 }
 .link-add-row input:focus { border-color: #5c7cfa; }
@@ -468,9 +532,9 @@
     color: #909296;
 }
 .link-body { flex: 1; min-width: 0; }
-.link-label { font-size: 12px; font-weight: 500; color: #e4e4e7; cursor: text; }
+.link-label { font-size: calc(12px * var(--ds, 1)); font-weight: 500; color: #e4e4e7; cursor: text; }
 .link-url {
-    font-size: 10px;
+    font-size: calc(10px * var(--ds, 1));
     color: #5c7cfa;
     white-space: nowrap;
     overflow: hidden;
@@ -484,7 +548,7 @@
 /* ── utility ── */
 .flex-row { display: flex; align-items: center; gap: 8px; }
 .dev-note {
-    font-size: 10px;
+    font-size: calc(10px * var(--ds, 1));
     color: #5c5c66;
     border: 1px dashed #373a40;
     border-radius: 4px;
@@ -506,14 +570,37 @@
 #dossier-panel-root ::-webkit-scrollbar-track { background: transparent; }
 #dossier-panel-root ::-webkit-scrollbar-thumb { background: #373a40; border-radius: 2px; }
 
+/* When the panel is wide: notes list on the left, editor on the right, bigger thumbnails. */
+@container dossier (min-width: 760px) {
+    #panel-text.active {
+        display: grid;
+        grid-template-columns: minmax(250px, 1fr) minmax(0, 1.8fr);
+        grid-template-rows: auto auto auto minmax(0, 1fr);
+        column-gap: 18px;
+        overflow: hidden;
+    }
+    #panel-text > .panel-label { grid-column: 1; grid-row: 1; }
+    #panel-text > .flex-row { grid-column: 1; grid-row: 2; }
+    #panel-text > .subtab-bar { grid-column: 1; grid-row: 3; }
+    #panel-text > .subtab-panel.active { grid-column: 1; grid-row: 4; overflow-y: auto; min-height: 0; padding-right: 4px; }
+    #panel-text > .note-editor { display: flex; grid-column: 2; grid-row: 1 / -1; margin-top: 0; min-height: 0; border-color: #373a40; }
+    #panel-text > .note-editor.open { border-color: #5c7cfa; }
+    #panel-text > .note-editor textarea { flex: 1; resize: none; min-height: 0; }
+    .visual-grid { grid-template-columns: repeat(auto-fill, minmax(calc(170px * var(--ds, 1)), 1fr)); }
+}
+
 @media (max-width: 480px) {
     #dossier-panel-root {
-        top: auto;
-        bottom: 8px;
-        left: 8px;
-        right: 8px;
+        top: 8px !important;
+        bottom: 8px !important;
+        left: 8px !important;
+        right: 8px !important;
     }
-    #dossier-panel-root .dossier-panel {
+    #dossier-panel-root .dossier-panel,
+    #dossier-panel-root.dossier-large .dossier-panel {
         width: 100%;
+        height: calc(100vh - 16px);
+        height: calc(100dvh - 16px);
     }
+    .dossier-resize-grip { display: none; }
 }

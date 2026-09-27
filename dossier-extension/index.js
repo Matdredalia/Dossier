@@ -60,6 +60,9 @@ function panelTemplate() {
                 <div class="dossier-switcher" id="dossier-switcher"></div>
             </div>
             <div class="dossier-topbar-actions">
+                <button class="btn-icon" id="dossier-smaller-btn" aria-label="Smaller text" title="Smaller text">A−</button>
+                <button class="btn-icon" id="dossier-bigger-btn" aria-label="Larger text" title="Larger text">A+</button>
+                <button class="btn-icon" id="dossier-large-btn" aria-label="Toggle large view" title="Large view">⤢</button>
                 <button class="btn-new" id="dossier-new-btn" title="Create new dossier">+ New</button>
                 <button class="btn-icon" id="dossier-close-btn" aria-label="Close dossier panel" title="Close">✕</button>
             </div>
@@ -85,7 +88,10 @@ function panelTemplate() {
 
         <div class="tab-panel" id="panel-visual">
             <div class="panel-label">Reference Images &amp; Visuals</div>
-            <button class="btn-primary" id="dossier-add-image-btn">Add Image</button>
+            <div class="flex-row">
+                <button class="btn-primary" id="dossier-add-image-btn">Add Image</button>
+                <button class="btn-secondary" id="dossier-fit-btn" title="Switch between cropped squares and whole images">Show whole images</button>
+            </div>
             <input type="file" id="dossier-image-input" accept="image/*" multiple style="display:none" />
             <div class="visual-grid" id="dossier-visual-grid"></div>
         </div>
@@ -128,8 +134,17 @@ function panelTemplate() {
             </div>
             <div class="link-list" id="dossier-link-list"></div>
         </div>
+        <div class="dossier-resize-grip" id="dossier-resize-grip" title="Drag to resize"></div>
     </div>
-    <div class="dossier-lightbox" id="dossier-lightbox"><img id="dossier-lightbox-img" src="" alt="" /></div>
+    <div class="dossier-lightbox" id="dossier-lightbox">
+        <button class="lb-btn lb-close" id="dossier-lb-close" aria-label="Close">✕</button>
+        <button class="lb-btn lb-nav lb-prev" id="dossier-lb-prev" aria-label="Previous image">‹</button>
+        <figure class="lb-figure">
+            <img id="dossier-lightbox-img" src="" alt="" />
+            <figcaption class="lb-caption" id="dossier-lb-caption"></figcaption>
+        </figure>
+        <button class="lb-btn lb-nav lb-next" id="dossier-lb-next" aria-label="Next image">›</button>
+    </div>
     `;
 }
 
@@ -142,7 +157,9 @@ function injectPanel() {
     root.innerHTML = panelTemplate();
     document.body.appendChild(root);
     wireStaticEvents(root);
+    initGeometry(root);
     makeDraggable(root, root.querySelector('#dossier-drag-handle'));
+    makeResizable(root, root.querySelector('#dossier-resize-grip'));
 }
 
 function injectMenuButton() {
@@ -167,27 +184,152 @@ function togglePanel() {
 
 // ─────────────────────────── dragging ───────────────────────────
 
-function makeDraggable(root, handle) {
-    let dragging = false;
-    let offsetX = 0;
-    let offsetY = 0;
+const UI_KEY = 'dossier_ui';
+const MIN_W = 320;
+const MIN_H = 360;
+const SCALE_MIN = 0.85;
+const SCALE_MAX = 1.6;
+let ui = { w: null, h: null, left: null, top: null, large: false, scale: 1.1, fit: false };
 
-    handle.addEventListener('mousedown', (e) => {
-        if (e.target.closest('button')) return; // don't drag when clicking a button in the bar
-        dragging = true;
+const isPhone = () => window.matchMedia('(max-width: 480px)').matches;
+const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), Math.max(lo, hi));
+
+function loadUi() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(UI_KEY));
+        if (saved && typeof saved === 'object') ui = { ...ui, ...saved };
+    } catch { /* storage unavailable: defaults are fine */ }
+}
+
+function saveUi() {
+    try {
+        localStorage.setItem(UI_KEY, JSON.stringify(ui));
+    } catch { /* remembering size is a convenience only */ }
+}
+
+/** Keep at least part of the panel on screen, e.g. after the window got smaller. */
+function clampIntoViewport(root) {
+    if (root.style.left === '') return;
+    const rect = root.getBoundingClientRect();
+    const left = clamp(rect.left, 8 - rect.width + 80, window.innerWidth - 80);
+    const top = clamp(rect.top, 0, window.innerHeight - 48);
+    root.style.left = `${left}px`;
+    root.style.top = `${top}px`;
+    ui.left = left;
+    ui.top = top;
+}
+
+function applyUi(root) {
+    root.style.setProperty('--ds', String(ui.scale));
+    if (ui.w) root.style.setProperty('--dossier-w', `${ui.w}px`);
+    if (ui.h) root.style.setProperty('--dossier-h', `${ui.h}px`);
+    root.classList.toggle('dossier-large', !!ui.large);
+    const grid = root.querySelector('#dossier-visual-grid');
+    if (grid) grid.classList.toggle('fit', !!ui.fit);
+    const fitBtn = root.querySelector('#dossier-fit-btn');
+    if (fitBtn) fitBtn.textContent = ui.fit ? 'Crop to squares' : 'Show whole images';
+    const largeBtn = root.querySelector('#dossier-large-btn');
+    if (largeBtn) {
+        largeBtn.textContent = ui.large ? '⤡' : '⤢';
+        largeBtn.title = ui.large ? 'Back to normal size' : 'Large view';
+    }
+}
+
+function initGeometry(root) {
+    loadUi();
+    applyUi(root);
+    if (ui.left !== null && ui.top !== null && !isPhone()) {
+        root.style.left = `${ui.left}px`;
+        root.style.top = `${ui.top}px`;
+        root.style.right = 'auto';
+        root.style.bottom = 'auto';
+    }
+    root.querySelector('#dossier-large-btn').addEventListener('click', () => {
+        ui.large = !ui.large;
+        applyUi(root);
+        saveUi();
+    });
+    root.querySelector('#dossier-fit-btn').addEventListener('click', () => {
+        ui.fit = !ui.fit;
+        applyUi(root);
+        saveUi();
+    });
+    const step = (delta) => {
+        ui.scale = Math.round(clamp(ui.scale + delta, SCALE_MIN, SCALE_MAX) * 100) / 100;
+        applyUi(root);
+        saveUi();
+    };
+    root.querySelector('#dossier-smaller-btn').addEventListener('click', () => step(-0.1));
+    root.querySelector('#dossier-bigger-btn').addEventListener('click', () => step(0.1));
+    window.addEventListener('resize', () => { if (!ui.large && !isPhone()) clampIntoViewport(root); });
+}
+
+/** Drag by the top bar. Pointer events, so it works with a finger as well as a mouse. */
+function makeDraggable(root, handle) {
+    let drag = null;
+
+    handle.addEventListener('pointerdown', (e) => {
+        if (e.target.closest('button') || ui.large || isPhone()) return;
+        if (e.pointerType === 'mouse' && e.button !== 0) return;
         const rect = root.getBoundingClientRect();
-        offsetX = e.clientX - rect.left;
-        offsetY = e.clientY - rect.top;
+        drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+        try { handle.setPointerCapture(e.pointerId); } catch { /* not fatal: drag still works while the pointer stays over the bar */ }
         e.preventDefault();
     });
-    document.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
-        root.style.left = `${e.clientX - offsetX}px`;
-        root.style.top = `${e.clientY - offsetY}px`;
+    handle.addEventListener('pointermove', (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        root.style.left = `${e.clientX - drag.dx}px`;
+        root.style.top = `${e.clientY - drag.dy}px`;
         root.style.right = 'auto';
         root.style.bottom = 'auto';
     });
-    document.addEventListener('mouseup', () => { dragging = false; });
+    const end = (e) => {
+        if (!drag || e.pointerId !== drag.id) return;
+        drag = null;
+        clampIntoViewport(root);
+        saveUi();
+    };
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+}
+
+/** Resize from the bottom-right corner grip. */
+function makeResizable(root, grip) {
+    let resize = null;
+    const panel = root.querySelector('.dossier-panel');
+
+    grip.addEventListener('pointerdown', (e) => {
+        if (ui.large || isPhone()) return;
+        const rect = panel.getBoundingClientRect();
+        resize = { id: e.pointerId, x: e.clientX, y: e.clientY, w: rect.width, h: rect.height };
+        try { grip.setPointerCapture(e.pointerId); } catch { /* not fatal */ }
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    grip.addEventListener('pointermove', (e) => {
+        if (!resize || e.pointerId !== resize.id) return;
+        // Grow as far as the window allows; if the panel would run off the right/bottom edge, shift it back on screen.
+        const rect = root.getBoundingClientRect();
+        ui.w = Math.round(clamp(resize.w + e.clientX - resize.x, MIN_W, window.innerWidth - 16));
+        ui.h = Math.round(clamp(resize.h + e.clientY - resize.y, MIN_H, window.innerHeight - 16));
+        const left = Math.max(8, Math.min(rect.left, window.innerWidth - 8 - ui.w));
+        const top = Math.max(8, Math.min(rect.top, window.innerHeight - 8 - ui.h));
+        root.style.left = `${left}px`;
+        root.style.top = `${top}px`;
+        root.style.right = 'auto';
+        root.style.bottom = 'auto';
+        ui.left = left;
+        ui.top = top;
+        root.style.setProperty('--dossier-w', `${ui.w}px`);
+        root.style.setProperty('--dossier-h', `${ui.h}px`);
+    });
+    const end = (e) => {
+        if (!resize || e.pointerId !== resize.id) return;
+        resize = null;
+        saveUi();
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
 }
 
 // ─────────────────────────── tab / subtab switching ───────────────────────────
@@ -271,12 +413,31 @@ function wireStaticEvents(root) {
         imageInput.value = '';
     });
 
-    root.querySelector('#dossier-lightbox').addEventListener('click', (e) => {
+    const lightbox = root.querySelector('#dossier-lightbox');
+    lightbox.addEventListener('click', (e) => {
         if (e.target.id === 'dossier-lightbox') closeLightbox();
+    });
+    root.querySelector('#dossier-lb-close').addEventListener('click', closeLightbox);
+    root.querySelector('#dossier-lb-prev').addEventListener('click', () => stepLightbox(-1));
+    root.querySelector('#dossier-lb-next').addEventListener('click', () => stepLightbox(1));
+    document.addEventListener('keydown', (e) => {
+        if (!lightbox.classList.contains('open')) return;
+        if (e.key === 'Escape') closeLightbox();
+        else if (e.key === 'ArrowLeft') stepLightbox(-1);
+        else if (e.key === 'ArrowRight') stepLightbox(1);
+    });
+    // Swipe left/right to browse on a touch screen.
+    let swipeX = null;
+    lightbox.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') swipeX = e.clientX; });
+    lightbox.addEventListener('pointerup', (e) => {
+        if (swipeX === null) return;
+        const dx = e.clientX - swipeX;
+        swipeX = null;
+        if (Math.abs(dx) > 60) stepLightbox(dx < 0 ? 1 : -1);
     });
 
     // ── notes ──
-    root.querySelector('#dossier-add-note-btn').addEventListener('click', () => openNoteEditor(null));
+    root.querySelector('#dossier-add-note-btn').addEventListener('click', () => { if (confirmDiscardDraft()) openNoteEditor(null); });
     root.querySelector('#dossier-note-cancel-btn').addEventListener('click', closeNoteEditor);
     root.querySelector('#dossier-note-save-btn').addEventListener('click', saveNoteFromEditor);
 
@@ -405,23 +566,42 @@ function renderImages() {
         </div>
     `).join('');
 
-    grid.querySelectorAll('.vis-thumb').forEach((thumb) => {
+    grid.querySelectorAll('.vis-thumb').forEach((thumb, index) => {
         const id = thumb.dataset.id;
         thumb.addEventListener('click', (e) => {
             if (e.target.closest('.del-overlay')) return;
-            openLightbox(`${API_BASE}/${currentKey}/images/${id}/file`);
+            openLightbox(index);
         });
         thumb.querySelector('.del-overlay').addEventListener('click', () => deleteImage(id));
     });
 }
 
-function openLightbox(src) {
+let lightboxIndex = -1;
+
+function openLightbox(index) {
+    const images = (currentData && currentData.images) || [];
+    if (!images.length) return;
+    lightboxIndex = ((index % images.length) + images.length) % images.length;
+    const img = images[lightboxIndex];
     const box = document.getElementById('dossier-lightbox');
-    document.getElementById('dossier-lightbox-img').src = src;
+    const label = img.label || img.originalName || '';
+    const el = document.getElementById('dossier-lightbox-img');
+    el.src = `${API_BASE}/${currentKey}/images/${img.id}/file`;
+    el.alt = label;
+    document.getElementById('dossier-lb-caption').textContent = images.length > 1
+        ? `${label}${label ? '  ·  ' : ''}${lightboxIndex + 1} / ${images.length}`
+        : label;
+    const many = images.length > 1;
+    box.querySelector('.lb-prev').style.display = many ? '' : 'none';
+    box.querySelector('.lb-next').style.display = many ? '' : 'none';
     box.classList.add('open');
+}
+function stepLightbox(delta) {
+    if (lightboxIndex >= 0) openLightbox(lightboxIndex + delta);
 }
 function closeLightbox() {
     document.getElementById('dossier-lightbox').classList.remove('open');
+    lightboxIndex = -1;
 }
 
 function renderNotes() {
@@ -437,7 +617,7 @@ function renderNotes() {
             <div class="note-entry" data-id="${n.id}" data-category="${category}">
                 <div class="note-body">
                     <div class="note-title">${escapeHtml(n.title)}</div>
-                    <div class="note-snippet">${escapeHtml((n.content || '').slice(0, 90))}</div>
+                    <div class="note-snippet">${escapeHtml((n.content || '').slice(0, 260))}</div>
                     <div class="note-meta">${formatDate(n.updatedAt)}</div>
                 </div>
                 <button class="btn-danger-icon" aria-label="Delete note">🗑</button>
@@ -449,12 +629,14 @@ function renderNotes() {
             const cat = entry.dataset.category;
             entry.addEventListener('click', (e) => {
                 if (e.target.closest('.btn-danger-icon')) return;
+                if (!confirmDiscardDraft()) return;
                 const note = currentData.notes[cat].find((n) => n.id === id);
                 openNoteEditor({ category: cat, id, note });
             });
             entry.querySelector('.btn-danger-icon').addEventListener('click', () => deleteNote(cat, id));
         });
     }
+    markSelectedNote();
 }
 
 function renderLinks() {
@@ -488,6 +670,25 @@ function renderLinks() {
 
 // ─────────────────────────── note editor ───────────────────────────
 
+// What the editor held when it was opened, to notice unsaved changes before they are overwritten.
+let editorBaseline = { title: '', content: '' };
+
+function editorIsDirty() {
+    const title = document.getElementById('dossier-note-title-input').value;
+    const content = document.getElementById('dossier-note-content-input').value;
+    return title !== editorBaseline.title || content !== editorBaseline.content;
+}
+
+function confirmDiscardDraft() {
+    return !editorIsDirty() || confirm('You have unsaved changes in the note editor. Discard them?');
+}
+
+function markSelectedNote() {
+    document.querySelectorAll('.note-entry').forEach((el) => {
+        el.classList.toggle('selected', !!editingNote && el.dataset.id === editingNote.id);
+    });
+}
+
 function openNoteEditor(edit) {
     editingNote = edit;
     const box = document.getElementById('dossier-note-editor');
@@ -495,12 +696,19 @@ function openNoteEditor(edit) {
     const contentInput = document.getElementById('dossier-note-content-input');
     titleInput.value = edit ? edit.note.title : '';
     contentInput.value = edit ? edit.note.content : '';
+    editorBaseline = { title: titleInput.value, content: contentInput.value };
     box.classList.add('open');
+    markSelectedNote();
     titleInput.focus();
 }
 function closeNoteEditor() {
     editingNote = null;
     document.getElementById('dossier-note-editor').classList.remove('open');
+    // In the wide layout the editor stays visible, so it must not keep showing the last note's text.
+    document.getElementById('dossier-note-title-input').value = '';
+    document.getElementById('dossier-note-content-input').value = '';
+    editorBaseline = { title: '', content: '' };
+    markSelectedNote();
 }
 async function saveNoteFromEditor() {
     const title = document.getElementById('dossier-note-title-input').value.trim();
@@ -561,6 +769,7 @@ async function importTextFiles(files) {
 }
 
 async function deleteNote(category, id) {
+    if (editingNote && editingNote.id === id) closeNoteEditor();
     await api(`/${currentKey}/notes/${category}/${id}`, { method: 'DELETE' });
     currentData.notes[category] = currentData.notes[category].filter((n) => n.id !== id);
     renderNotes();
