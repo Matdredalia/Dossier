@@ -5,7 +5,7 @@
     position: fixed;
     top: 80px;
     right: 24px;
-    z-index: 9999;
+    z-index: 100000; /* well above ST's own #extensionsMenu (29999), so the wand menu can't sit on top of this */
     display: none;
     font-family: "SF Mono", "Cascadia Code", "JetBrains Mono", "Consolas", "Monaco", "Andale Mono", monospace;
     font-size: calc(13px * var(--ds, 1));
@@ -165,7 +165,7 @@
     display: none;
     flex-direction: column;
     overflow: hidden;
-    z-index: 10000;
+    z-index: 100001;
     cursor: default;
 }
 .dossier-switcher-list { overflow-y: auto; min-height: 0; }
@@ -404,7 +404,7 @@
     display: none;
     align-items: center;
     justify-content: center;
-    z-index: 10001;
+    z-index: 100002;
     padding: 12px;
     touch-action: pan-y;
 }
