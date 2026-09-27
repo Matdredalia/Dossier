@@ -18,6 +18,7 @@ Nothing is injected into lorebooks or prompts. It's purely a staging and referen
 - **Resize:** drag the grip in the bottom-right corner (mouse or touch). The panel grows and slides back on screen if it would run off the edge.
 - **Large view (⤢):** expands the panel to most of the window. Click again to go back.
 - **Text size (A− / A+):** scales all text in the panel.
+- **Switch dossiers:** click the ▾ next to the dossier's name (or the name itself). The one you're in is highlighted, and a filter box appears once you have more than six.
 - **Move:** drag the top bar. Size, position, text size and view are remembered per device.
 - **Text tab:** when the panel is wide enough, notes are listed on the left and the editor fills the right, with a tall text box for drafting. Selecting another note warns you before discarding unsaved changes.
 - **Visual tab:** larger thumbnails, and a button to show whole images instead of cropped squares. Click an image for a big view; browse with the ‹ › buttons, the arrow keys or a swipe.

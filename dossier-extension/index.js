@@ -57,7 +57,8 @@ function panelTemplate() {
     <div class="dossier-panel" role="region" aria-label="Dossier extension panel">
         <div class="dossier-topbar" id="dossier-drag-handle">
             <div class="dossier-title-area">
-                <span class="dossier-title" id="dossier-title" title="Dossier">Loading…</span>
+                <span class="dossier-title" id="dossier-title" title="Switch dossier">Loading…</span>
+                <button class="btn-icon" id="dossier-switch-btn" aria-label="Switch dossier" aria-haspopup="listbox" title="Switch dossier">▾</button>
                 <button class="btn-icon" id="dossier-rename-btn" aria-label="Rename dossier" title="Rename dossier">✎</button>
                 <div class="dossier-switcher" id="dossier-switcher"></div>
             </div>
@@ -284,7 +285,7 @@ function makeDraggable(root, handle) {
     let drag = null;
 
     handle.addEventListener('pointerdown', (e) => {
-        if (e.target.closest('button') || ui.large || isPhone()) return;
+        if (e.target.closest('button, #dossier-title, .dossier-switcher') || ui.large || isPhone()) return;
         if (e.pointerType === 'mouse' && e.button !== 0) return;
         const rect = root.getBoundingClientRect();
         drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
@@ -396,6 +397,12 @@ function wireStaticEvents(root) {
     });
 
     root.querySelector('#dossier-title').addEventListener('click', openSwitcher);
+    root.querySelector('#dossier-switch-btn').addEventListener('click', openSwitcher);
+    document.addEventListener('pointerdown', (e) => {
+        const sw = document.getElementById('dossier-switcher');
+        if (sw && sw.classList.contains('open') && !e.target.closest('#dossier-switcher, #dossier-title, #dossier-switch-btn')) closeSwitcher();
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSwitcher(); });
 
     // ── sound ──
     const soundInput = root.querySelector('#dossier-sound-input');
@@ -470,22 +477,43 @@ function wireStaticEvents(root) {
     linkInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addLink(linkInput); });
 }
 
+function closeSwitcher() {
+    const sw = document.getElementById('dossier-switcher');
+    if (sw) sw.classList.remove('open');
+}
+
 function openSwitcher() {
     const sw = document.getElementById('dossier-switcher');
-    if (sw.classList.contains('open')) {
-        sw.classList.remove('open');
-        return;
-    }
+    if (sw.classList.contains('open')) return closeSwitcher();
     api('/list').then((list) => {
-        sw.innerHTML = list.map((d) =>
-            `<div class="dossier-switcher-item" data-key="${d.key}">${escapeHtml(d.displayName)}${d.boundCharacter ? '' : ' <span style="opacity:.5">(standalone)</span>'}</div>`
-        ).join('') || '<div class="dossier-switcher-item" style="opacity:.6">No dossiers yet</div>';
+        list.sort((a, b) => String(a.displayName).localeCompare(String(b.displayName)));
+        const many = list.length > 6;
+        sw.innerHTML = (many ? '<input type="text" class="dossier-switcher-filter" placeholder="Filter dossiers…" autocomplete="off" spellcheck="false" />' : '')
+            + '<div class="dossier-switcher-list">'
+            + (list.map((d) =>
+                `<div class="dossier-switcher-item${d.key === currentKey ? ' current' : ''}" data-key="${escapeHtml(d.key)}" data-name="${escapeHtml(String(d.displayName).toLowerCase())}">${escapeHtml(d.displayName)}${d.boundCharacter ? '' : ' <span class="dossier-standalone">(standalone)</span>'}${d.key === currentKey ? ' <span class="dossier-standalone">← open</span>' : ''}</div>`
+            ).join('') || '<div class="dossier-switcher-item" style="opacity:.6">No dossiers yet</div>')
+            + '</div>';
         sw.querySelectorAll('.dossier-switcher-item[data-key]').forEach((el) => {
-            el.addEventListener('click', () => {
-                loadDossier(el.dataset.key);
-                sw.classList.remove('open');
+            el.addEventListener('click', async () => {
+                closeSwitcher();
+                if (el.dataset.key === currentKey) return;
+                if (!confirmDiscardDraft()) return;
+                closeNoteEditor();
+                clearSearch();
+                await loadDossier(el.dataset.key);
             });
         });
+        const filter = sw.querySelector('.dossier-switcher-filter');
+        if (filter) {
+            filter.addEventListener('input', () => {
+                const q = normalize(filter.value);
+                sw.querySelectorAll('.dossier-switcher-item[data-key]').forEach((el) => {
+                    el.style.display = !q || normalize(el.dataset.name).includes(q) ? '' : 'none';
+                });
+            });
+            setTimeout(() => filter.focus(), 0);
+        }
         sw.classList.add('open');
     });
 }
