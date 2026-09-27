@@ -1,6 +1,8 @@
 // Dossier — a per-character (or standalone) workspace for notes, links,
 // reference images, and audio clips, backed by the dossier-server plugin.
 
+import { normalize, parseTerms, searchMeta, sortResults } from './search.js';
+
 const API_BASE = '/api/plugins/dossier-server';
 const CATEGORY_LABELS = { canon: 'Canon', headcanon: 'Headcanon', altverse: 'Alt Verse', samples: 'Samples' };
 
@@ -65,6 +67,17 @@ function panelTemplate() {
                 <button class="btn-icon" id="dossier-large-btn" aria-label="Toggle large view" title="Large view">⤢</button>
                 <button class="btn-new" id="dossier-new-btn" title="Create new dossier">+ New</button>
                 <button class="btn-icon" id="dossier-close-btn" aria-label="Close dossier panel" title="Close">✕</button>
+            </div>
+        </div>
+
+        <div class="dossier-search" role="search">
+            <div class="dossier-search-field">
+                <input type="text" id="dossier-search-input" placeholder="Search notes, images, links, audio…" autocomplete="off" spellcheck="false" />
+                <button class="btn-icon" id="dossier-search-clear" aria-label="Clear search" title="Clear search">✕</button>
+            </div>
+            <div class="dossier-scope" role="group" aria-label="Search scope">
+                <button type="button" id="dossier-scope-this" aria-pressed="true" title="Search only this dossier">This dossier</button>
+                <button type="button" id="dossier-scope-all" aria-pressed="false" title="Search every dossier">All dossiers</button>
             </div>
         </div>
 
@@ -134,6 +147,7 @@ function panelTemplate() {
             </div>
             <div class="link-list" id="dossier-link-list"></div>
         </div>
+        <div class="dossier-search-results" id="dossier-search-results"></div>
         <div class="dossier-resize-grip" id="dossier-resize-grip" title="Drag to resize"></div>
     </div>
     <div class="dossier-lightbox" id="dossier-lightbox">
@@ -158,6 +172,7 @@ function injectPanel() {
     document.body.appendChild(root);
     wireStaticEvents(root);
     initGeometry(root);
+    wireSearch(root);
     makeDraggable(root, root.querySelector('#dossier-drag-handle'));
     makeResizable(root, root.querySelector('#dossier-resize-grip'));
 }
@@ -189,7 +204,7 @@ const MIN_W = 320;
 const MIN_H = 360;
 const SCALE_MIN = 0.85;
 const SCALE_MAX = 1.6;
-let ui = { w: null, h: null, left: null, top: null, large: false, scale: 1.1, fit: false };
+let ui = { w: null, h: null, left: null, top: null, large: false, scale: 1.1, fit: false, searchAll: false };
 
 const isPhone = () => window.matchMedia('(max-width: 480px)').matches;
 const clamp = (n, lo, hi) => Math.min(Math.max(n, lo), Math.max(lo, hi));
@@ -337,6 +352,7 @@ function makeResizable(root, grip) {
 function wireStaticEvents(root) {
     root.querySelectorAll('.tab-btn').forEach((btn) => {
         btn.addEventListener('click', () => {
+            clearSearch();
             activeTab = btn.dataset.tab;
             root.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b === btn));
             root.querySelectorAll('.tab-panel').forEach((p) => p.classList.toggle('active', p.id === 'panel-' + activeTab));
@@ -494,6 +510,7 @@ async function loadDossier(key) {
     currentKey = key;
     currentData = await api(`/${key}`);
     renderAll();
+    if (searchIsActive()) runSearch();
 }
 
 // ─────────────────────────── rendering ───────────────────────────
@@ -874,6 +891,168 @@ async function deleteImage(id) {
     await api(`/${currentKey}/images/${id}`, { method: 'DELETE' });
     currentData.images = currentData.images.filter((i) => i.id !== id);
     renderImages();
+}
+
+// ─────────────────────────── search ───────────────────────────
+
+const HIT_LABELS = { note: 'Note', image: 'Image', link: 'Link', sound: 'Audio' };
+const MIN_QUERY_LETTERS = 2;
+let searchSeq = 0;      // discards answers that arrive after a newer query was typed
+let searchTimer = null;
+
+const searchInput = () => document.getElementById('dossier-search-input');
+const searchIsActive = () => searchInput().value.trim() !== '';
+
+/** Escape, then wrap every search term in <mark>. Skips highlighting if accents make offsets unreliable. */
+function highlight(text, terms) {
+    const plain = String(text ?? '');
+    const flat = normalize(plain);
+    if (flat.length !== plain.length) return escapeHtml(plain);
+    const spans = [];
+    for (const term of terms) {
+        for (let at = flat.indexOf(term); at !== -1; at = flat.indexOf(term, at + term.length)) spans.push([at, at + term.length]);
+    }
+    spans.sort((a, b) => a[0] - b[0]);
+    const merged = [];
+    for (const [a, b] of spans) {
+        const last = merged[merged.length - 1];
+        if (last && a <= last[1]) last[1] = Math.max(last[1], b);
+        else merged.push([a, b]);
+    }
+    let out = '';
+    let pos = 0;
+    for (const [a, b] of merged) {
+        out += escapeHtml(plain.slice(pos, a)) + '<mark>' + escapeHtml(plain.slice(a, b)) + '</mark>';
+        pos = b;
+    }
+    return out + escapeHtml(plain.slice(pos));
+}
+
+function setSearchMessage(text) {
+    document.getElementById('dossier-search-results').innerHTML = `<div class="note-empty">${escapeHtml(text)}</div>`;
+}
+
+function renderSearchResults(response, terms, allDossiers) {
+    const box = document.getElementById('dossier-search-results');
+    const { results, total, truncated, dossiers } = response;
+    if (!results.length) {
+        setSearchMessage(allDossiers ? 'Nothing found in any dossier.' : 'Nothing found in this dossier.');
+        return;
+    }
+    const scope = allDossiers ? `across ${dossiers} dossier${dossiers === 1 ? '' : 's'}` : 'in this dossier';
+    const summary = `${total} result${total === 1 ? '' : 's'} ${scope}${truncated ? ` — showing the first ${results.length}` : ''}`;
+    box.innerHTML = `<div class="search-summary">${escapeHtml(summary)}</div>` + results.map((r, i) => {
+        const where = [allDossiers || r.dossierKey !== currentKey ? r.dossierName : '', r.category ? CATEGORY_LABELS[r.category] : ''].filter(Boolean).join(' · ');
+        return `
+        <div class="search-hit" data-index="${i}" tabindex="0" role="button">
+            <span class="hit-type hit-${r.type}">${HIT_LABELS[r.type]}</span>
+            <div class="hit-body">
+                <div class="hit-title">${highlight(r.title, terms)}</div>
+                ${r.snippet ? `<div class="hit-snippet">${highlight(r.snippet, terms)}</div>` : ''}
+                ${where ? `<div class="hit-meta">${escapeHtml(where)}</div>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+    box.querySelectorAll('.search-hit').forEach((el) => {
+        const open = () => openHit(results[Number(el.dataset.index)]);
+        el.addEventListener('click', open);
+        el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
+    });
+    box.scrollTop = 0;
+}
+
+function runSearch() {
+    const root = document.getElementById('dossier-panel-root');
+    const query = searchInput().value;
+    root.classList.toggle('dossier-searching', query.trim() !== '');
+    clearTimeout(searchTimer);
+    const seq = ++searchSeq;
+    if (query.trim() === '') return;
+
+    const terms = parseTerms(query);
+    if (terms.join('').length < MIN_QUERY_LETTERS) return setSearchMessage(`Type at least ${MIN_QUERY_LETTERS} letters to search.`);
+
+    if (!ui.searchAll) {
+        // Current dossier: everything is already loaded, so this is instant.
+        if (!currentData) return setSearchMessage('This dossier is still loading…');
+        const results = sortResults(searchMeta(currentData, terms, currentData.displayName));
+        return renderSearchResults({ results, total: results.length, truncated: false, dossiers: 1 }, terms, false);
+    }
+
+    // All dossiers: ask the server, after a short pause so typing doesn't fire a request per keystroke.
+    setSearchMessage('Searching every dossier…');
+    searchTimer = setTimeout(async () => {
+        try {
+            const response = await api(`/search?q=${encodeURIComponent(query)}&limit=100`);
+            if (seq !== searchSeq) return; // a newer query took over
+            renderSearchResults(response, terms, true);
+        } catch (e) {
+            if (seq !== searchSeq) return;
+            console.error('[Dossier] Search failed:', e);
+            setSearchMessage(/ 404 /.test(e.message)
+                ? 'Searching all dossiers needs the updated Dossier server plugin. Restart SillyTavern to load it.'
+                : 'Search failed. Check the browser console for details.');
+        }
+    }, 250);
+}
+
+function clearSearch() {
+    const input = searchInput();
+    if (!input || (input.value === '' && !document.getElementById('dossier-panel-root').classList.contains('dossier-searching'))) return;
+    input.value = '';
+    searchSeq++;
+    clearTimeout(searchTimer);
+    document.getElementById('dossier-panel-root').classList.remove('dossier-searching');
+    document.getElementById('dossier-search-results').innerHTML = '';
+}
+
+function applyScopeButtons() {
+    document.getElementById('dossier-scope-this').setAttribute('aria-pressed', String(!ui.searchAll));
+    document.getElementById('dossier-scope-all').setAttribute('aria-pressed', String(ui.searchAll));
+}
+
+/** Jump to a result: switch dossier if needed, then the right tab, then open the thing itself. */
+async function openHit(hit) {
+    const root = document.getElementById('dossier-panel-root');
+    if (hit.dossierKey !== currentKey) {
+        if (!confirmDiscardDraft()) return;
+        closeNoteEditor();
+        await loadDossier(hit.dossierKey);
+    } else if (hit.type === 'note' && !confirmDiscardDraft()) {
+        return;
+    }
+    clearSearch();
+    const tab = { note: 'text', image: 'visual', link: 'links', sound: 'sound' }[hit.type];
+    root.querySelector(`.tab-btn[data-tab="${tab}"]`).click();
+
+    if (hit.type === 'note') {
+        root.querySelector(`.subtab-btn[data-subtab="${hit.category}"]`).click();
+        const note = (currentData.notes[hit.category] || []).find((n) => n.id === hit.id);
+        if (note) {
+            openNoteEditor({ category: hit.category, id: hit.id, note });
+            const entry = root.querySelector(`.note-entry[data-id="${hit.id}"]`);
+            if (entry) entry.scrollIntoView({ block: 'nearest' });
+        }
+    } else if (hit.type === 'image') {
+        const index = currentData.images.findIndex((i) => i.id === hit.id);
+        if (index !== -1) openLightbox(index);
+    }
+}
+
+function wireSearch(root) {
+    const input = root.querySelector('#dossier-search-input');
+    input.addEventListener('input', runSearch);
+    input.addEventListener('keydown', (e) => { if (e.key === 'Escape') { clearSearch(); input.blur(); } });
+    root.querySelector('#dossier-search-clear').addEventListener('click', () => { clearSearch(); input.focus(); });
+    const setScope = (all) => {
+        ui.searchAll = all;
+        saveUi();
+        applyScopeButtons();
+        if (searchIsActive()) runSearch();
+    };
+    root.querySelector('#dossier-scope-this').addEventListener('click', () => setScope(false));
+    root.querySelector('#dossier-scope-all').addEventListener('click', () => setScope(true));
+    applyScopeButtons();
 }
 
 // ─────────────────────────── boot ───────────────────────────

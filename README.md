@@ -23,6 +23,14 @@ Nothing is injected into lorebooks or prompts. It's purely a staging and referen
 - **Visual tab:** larger thumbnails, and a button to show whole images instead of cropped squares. Click an image for a big view; browse with the ‹ › buttons, the arrow keys or a swipe.
 - **Phone:** the panel fills the screen.
 
+## Search
+
+Type in the search box at the top of the panel. It looks through note titles and text, image labels and file names, link labels and addresses, and audio names. Several words must all appear (any order); case and accents don't matter; matches are highlighted.
+
+A toggle next to the box chooses the scope: **This dossier** (instant, the default) or **All dossiers** (searched by the server, so it stays fast with a big backlog; results are labelled with their dossier). Click a result to jump straight to that note, image, link or recording, switching dossier if needed. The scope you pick is remembered per device.
+
+> Searching all dossiers needs the updated server plugin: copy `dossier-server/` over the old one and restart SillyTavern.
+
 ## Install
 
 Dossier has two parts, and both are required.

@@ -9,6 +9,8 @@ const STORAGE_ROOT = path.join(__dirname, 'storage');
 const INDEX_PATH = path.join(STORAGE_ROOT, 'index.json');
 
 const ALLOWED_CATEGORIES = ['canon', 'headcanon', 'altverse', 'samples'];
+// Dossier keys that would collide with built-in routes (e.g. GET /list) and become unreachable.
+const RESERVED_KEYS = new Set(['resolve', 'list', 'create', 'search']);
 
 function ensureDir(dir) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -77,7 +79,7 @@ function createDossier(displayName, boundCharacter) {
     // avoid collisions
     let suffix = 1;
     let candidate = key;
-    while (idx.dossiers[candidate]) {
+    while (idx.dossiers[candidate] || RESERVED_KEYS.has(candidate)) {
         suffix += 1;
         candidate = `${key}-${suffix}`;
     }
@@ -127,6 +129,79 @@ function storeUpload(req, key, subdir, defaultExt) {
     return { id, filename };
 }
 
+// ── search (copied from dossier-extension/search.js; keep in sync, see test/parity-test.mjs) ──
+function normalize(text) {
+    return String(text ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+function parseTerms(query) {
+    const terms = normalize(query).split(/\s+/).filter(Boolean);
+    return [...new Set(terms)];
+}
+
+/** Text around the first hit in `body`, for the results list. */
+function makeSnippet(body, terms, width = 150) {
+    const text = String(body ?? '').replace(/\s+/g, ' ').trim();
+    if (!text) return '';
+    const hay = normalize(text);
+    let at = -1;
+    if (hay.length === text.length) {
+        for (const term of terms) {
+            const i = hay.indexOf(term);
+            if (i !== -1 && (at === -1 || i < at)) at = i;
+        }
+    }
+    if (at === -1) return text.length > width ? `${text.slice(0, width).trimEnd()}…` : text;
+    const start = Math.max(0, at - Math.floor(width / 3));
+    const end = Math.min(text.length, start + width);
+    return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
+}
+
+/**
+ * @returns {{score: number, snippet: string}|null}  null when the item does not match every term
+ */
+function scoreItem(title, body, terms) {
+    if (!terms.length) return null;
+    const t = normalize(title);
+    const b = normalize(body);
+    let score = 0;
+    for (const term of terms) {
+        const inTitle = t.includes(term);
+        const inBody = b.includes(term);
+        if (!inTitle && !inBody) return null;
+        score += (inTitle ? 10 : 0) + (inBody ? 3 : 0);
+    }
+    if (terms.length > 1 && t.includes(terms.join(' '))) score += 20;
+    return { score, snippet: makeSnippet(body, terms) };
+}
+
+const CATEGORIES = ['canon', 'headcanon', 'altverse', 'samples'];
+
+/** Search one dossier's data (the meta.json shape). Returns unsorted result objects. */
+function searchMeta(meta, terms, dossierName = meta.displayName) {
+    const out = [];
+    const add = (type, item, title, body, category) => {
+        const hit = scoreItem(title, body, terms);
+        if (!hit) return;
+        out.push({
+            type, category: category || null, id: item.id, title: title || '(untitled)', snippet: hit.snippet,
+            score: hit.score, updatedAt: item.updatedAt || item.createdAt || '',
+            dossierKey: meta.key, dossierName,
+        });
+    };
+    for (const category of CATEGORIES) {
+        for (const n of (meta.notes && meta.notes[category]) || []) add('note', n, n.title || '', n.content || '', category);
+    }
+    for (const i of meta.images || []) add('image', i, i.label || i.originalName || '', i.label && i.originalName && i.label !== i.originalName ? i.originalName : '');
+    for (const l of meta.links || []) add('link', l, l.label || l.url || '', l.url || '');
+    for (const s of meta.sounds || []) add('sound', s, s.originalName || '', '');
+    return out;
+}
+
+function sortResults(results) {
+    return results.sort((a, b) => b.score - a.score || String(b.updatedAt).localeCompare(String(a.updatedAt)) || a.title.localeCompare(b.title));
+}
+
 /**
  * @param {import('express').Router} router
  */
@@ -172,6 +247,25 @@ async function init(router) {
         if (!displayName) return res.status(400).json({ error: 'displayName is required' });
         const meta = createDossier(displayName, boundCharacter || null);
         res.json({ key: meta.key, displayName: meta.displayName, boundCharacter: meta.boundCharacter });
+    });
+
+    // ── search notes, image/link/audio labels across one or all dossiers ──
+    router.get('/search', (req, res) => {
+        const terms = parseTerms(req.query.q);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 300);
+        if (terms.join('').length < 2) return res.json({ results: [], total: 0, truncated: false, dossiers: 0 });
+
+        const idx = loadIndex();
+        const only = req.query.key ? String(req.query.key) : null;
+        const keys = Object.keys(idx.dossiers).filter((k) => !only || k === only);
+        let results = [];
+        for (const key of keys) {
+            const meta = loadMeta(key);
+            if (!meta) continue;
+            results = results.concat(searchMeta(meta, terms, idx.dossiers[key].displayName || meta.displayName));
+        }
+        sortResults(results);
+        res.json({ results: results.slice(0, limit), total: results.length, truncated: results.length > limit, dossiers: keys.length });
     });
 
     // ── fetch full dossier data ──
@@ -386,4 +480,4 @@ const info = {
     description: 'Backend storage for the Dossier extension.',
 };
 
-module.exports = { init, exit, info };
+module.exports = { init, exit, info, _test: { normalize, parseTerms, makeSnippet, scoreItem, searchMeta, sortResults } };
