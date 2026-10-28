@@ -65,7 +65,7 @@ function panelTemplate() {
             <div class="dossier-topbar-actions">
                 <button class="btn-icon" id="dossier-smaller-btn" aria-label="Smaller text" title="Smaller text">A−</button>
                 <button class="btn-icon" id="dossier-bigger-btn" aria-label="Larger text" title="Larger text">A+</button>
-                <button class="btn-icon" id="dossier-large-btn" aria-label="Toggle large view" title="Large view">⤢</button>
+                <button class="btn-icon" id="dossier-large-btn" aria-label="Toggle large view" title="Expand to nearly full window">⤢ Expand</button>
                 <button class="btn-new" id="dossier-new-btn" title="Create new dossier">+ New</button>
                 <button class="btn-icon" id="dossier-close-btn" aria-label="Close dossier panel" title="Close">✕</button>
             </div>
@@ -246,8 +246,8 @@ function applyUi(root) {
     if (fitBtn) fitBtn.textContent = ui.fit ? 'Crop to squares' : 'Show whole images';
     const largeBtn = root.querySelector('#dossier-large-btn');
     if (largeBtn) {
-        largeBtn.textContent = ui.large ? '⤡' : '⤢';
-        largeBtn.title = ui.large ? 'Back to normal size' : 'Large view';
+        largeBtn.textContent = ui.large ? '⤡ Shrink' : '⤢ Expand';
+        largeBtn.title = ui.large ? 'Back to normal size (drag and resize work again)' : 'Expand to nearly full window';
     }
 }
 

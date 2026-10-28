@@ -127,6 +127,16 @@
     background: #25262b;
     color: #c1c2c5;
 }
+/* Labelled so it reads as a button, not a mystery glyph. */
+#dossier-large-btn {
+    width: auto;
+    padding: 0 8px;
+    gap: 4px;
+    font-family: inherit;
+    font-size: calc(11px * var(--ds, 1));
+    border: 1px solid #373a40;
+    white-space: nowrap;
+}
 
 .btn-new {
     display: inline-flex;
@@ -621,6 +631,7 @@
         height: calc(100dvh - 16px);
     }
     .dossier-resize-grip { display: none; }
+    #dossier-large-btn { display: none; } /* the panel is always full screen here */
 }
 
 /* ── search ── */
